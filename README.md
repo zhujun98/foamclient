@@ -1,3 +1,3 @@
-# foamlight
+# foamclient
 
-![Build status](https://github.com/zhujun98/foamlight/actions/workflows/python-package.yml/badge.svg)
+![Build status](https://github.com/zhujun98/foamclient/actions/workflows/python-package.yml/badge.svg)
