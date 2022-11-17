@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "foamclient"
-version = "0.0.1"
+version = "0.1.0"
 description = ""
 authors = [
     {name = "Jun Zhu", email="zhujun981661@gmail.com"},
