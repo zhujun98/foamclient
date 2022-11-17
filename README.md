@@ -1,5 +1,6 @@
 # foamclient
 
+[![PyPi](https://img.shields.io/pypi/v/foamclient.svg)](https://pypi.org/project/foamclient/)
 ![Build status](https://github.com/zhujun98/foamclient/actions/workflows/python-package.yml/badge.svg)
 
 **foamclient** facilitates receiving data and meta data at scientific user facilities, 
