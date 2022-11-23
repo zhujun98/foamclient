@@ -5,7 +5,7 @@ The full license is in the file LICENSE, distributed with this software.
 
 Author: Jun Zhu
 """
-from typing import Any, Optional
+from typing import Any, Callable, Optional, Union
 
 import redis
 
@@ -15,7 +15,8 @@ from .deserializer import DeserializerType, create_deserializer
 class RedisClient:
     """Provide API for receiving data from the data switch."""
 
-    def __init__(self, host: str, port: int, deserializer: DeserializerType, *,
+    def __init__(self, host: str, port: int,
+                 deserializer: Union[DeserializerType, Callable], *,
                  timeout: Optional[int] = None):
         """Initialization.
 
@@ -30,7 +31,10 @@ class RedisClient:
 
         self._timeout = timeout
 
-        self._unpack = create_deserializer(deserializer)
+        if callable(deserializer):
+            self._unpack = deserializer
+        else:
+            self._unpack = create_deserializer(deserializer)
 
     def subscribe(self, channel: str) -> None:
         """Subscribe to the given channel.
@@ -54,5 +58,6 @@ class RedisClient:
         return self
 
     def __exit__(self, *exc):
-        self._subscriber.close()
+        if self._subscriber is not None:
+            self._subscriber.close()
         self._client.close()
