@@ -5,7 +5,7 @@ The full license is in the file LICENSE, distributed with this software.
 
 Author: Jun Zhu <jun.zhu@psi.ch>
 """
-from typing import Any, Optional
+from typing import Any, Callable, Optional, Union
 
 import zmq
 
@@ -14,11 +14,12 @@ from .deserializer import DeserializerType, create_deserializer
 
 class ZmqClient:
     """Provide API for receiving data from the data switch."""
-    def __init__(self, endpoint: str, deserializer: DeserializerType, *,
-                 timeout: Optional[int] = None,
+    def __init__(self, endpoint: str,
+                 deserializer: Union[DeserializerType, Callable], *,
+                 timeout: Optional[float] = None,
                  sock: str = "PULL",
                  context: Optional[zmq.Context] = None,
-                 req: bytes = b"READY"):
+                 request: bytes = b"READY"):
         """Initialization.
 
         :param endpoint: endpoint of the ZMQ connection.
@@ -26,20 +27,19 @@ class ZmqClient:
         :param timeout: socket timeout in seconds.
         :param sock: socket type.
         :param context: ZMQ context.
-        :param req: acknowledgement sent to the REP server when the socket
+        :param request: acknowledgement sent to the REP server when the socket
             type is REQ.
         """
         self._ctx = context or zmq.Context()
         self._socket = None
-        self._req = req
+        self._request = request
 
-        self._recv_ready = True
+        self._req_ready = False
         sock = sock.upper()
         if sock == 'PULL':
             self._socket = self._ctx.socket(zmq.PULL)
         elif sock == 'REQ':
             self._socket = self._ctx.socket(zmq.REQ)
-            self._recv_ready = False
         elif sock == 'SUB':
             self._socket = self._ctx.socket(zmq.SUB)
             self._socket.setsockopt(zmq.SUBSCRIBE, b'')
@@ -54,18 +54,21 @@ class ZmqClient:
         if timeout is not None:
             self._socket.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
 
-        self._unpack = create_deserializer(deserializer)
+        if callable(deserializer):
+            self._unpack = deserializer
+        else:
+            self._unpack = create_deserializer(deserializer)
 
     def next(self) -> Any:
-        if self._sock_type == zmq.REQ and not self._recv_ready:
-            self._socket.send(self._req)
-            self._recv_ready = True
+        if self._sock_type == zmq.REQ and not self._req_ready:
+            self._socket.send(self._request)
+            self._req_ready = True
 
         try:
             msg = self._socket.recv_multipart(copy=False)
         except zmq.ZMQError:
             raise TimeoutError
-        self._recv_ready = False
+        self._req_ready = False
 
         return self._unpack(msg[0])
 
@@ -73,4 +76,4 @@ class ZmqClient:
         return self
 
     def __exit__(self, *exc):
-        self._ctx.destroy(linger=0)
+        self._ctx.destroy()
