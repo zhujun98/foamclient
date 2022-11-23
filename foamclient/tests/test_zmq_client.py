@@ -10,7 +10,7 @@ from foamclient import ZmqClient, DeserializerType
 _PORT = 12345
 
 
-class Server:
+class ZmqServer:
     def __init__(self, sock: str):
         self._ctx = zmq.Context()
 
@@ -74,7 +74,7 @@ class Server:
 
 
 def test_zmq_client_push_pull():
-    with Server("PUSH") as server:
+    with ZmqServer("PUSH") as server:
         with ZmqClient(f"tcp://localhost:{_PORT}",
                        sock="PULL",
                        timeout=1.0,
@@ -85,7 +85,7 @@ def test_zmq_client_push_pull():
 
 
 def test_zmq_client_rep_req():
-    with Server("REP") as server:
+    with ZmqServer("REP") as server:
         with ZmqClient(f"tcp://localhost:{_PORT}",
                        sock="REQ",
                        timeout=1.0,
@@ -96,7 +96,7 @@ def test_zmq_client_rep_req():
 
 
 def test_zmq_client_pub_sub():
-    with Server("PUB") as server:
+    with ZmqServer("PUB") as server:
         with ZmqClient(f"tcp://localhost:{_PORT}",
                        sock="SUB",
                        timeout=1.0,
