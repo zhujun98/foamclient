@@ -3,6 +3,8 @@ from queue import Empty, Queue
 from threading import Thread
 import time
 
+import pytest
+
 import zmq
 from foamclient import ZmqClient, DeserializerType
 
@@ -77,38 +79,18 @@ class ZmqServer:
         self._ctx.destroy()
 
 
-def test_zmq_client_push_pull():
+@pytest.mark.parametrize("server_sock,client_sock", [("PUSH", "PULL"), ("PUB", "SUB"), ("REP", "REQ")])
+def test_zmq_client_push_pull(server_sock,client_sock):
     with ZmqServer("PUSH") as server:
         with ZmqClient(f"tcp://localhost:{_PORT}",
                        deserializer=pickle.loads,
                        sock="PULL",
                        timeout=1.0) as client:
-            for i in range(3):
-                server.feed()
-                assert client.next() == f"data{i}"
-
-
-def test_zmq_client_rep_req():
-    with ZmqServer("REP") as server:
-        with ZmqClient(f"tcp://localhost:{_PORT}",
-                       deserializer=pickle.loads,
-                       sock="REQ",
-                       timeout=1.0) as client:
-            for i in range(3):
-                server.feed()
-                assert client.next() == f"data{i}"
-
-
-def test_zmq_client_pub_sub():
-    with ZmqServer("PUB") as server:
-        with ZmqClient(f"tcp://localhost:{_PORT}",
-                       deserializer=pickle.loads,
-                       sock="SUB",
-                       timeout=1.0) as client:
-            # It takes a little time (a few milliseconds) for the connection to be set up,
+            # It takes a little time (a few milliseconds) for the pub-sub connection to be set up,
             # and in that time lots of messages can be lost. The publisher needs to sleep
             # a little before starting to publish.
-            time.sleep(0.1)
+            if server_sock == "PUB":
+                time.sleep(0.1)
             for i in range(3):
                 server.feed()
                 assert client.next() == f"data{i}"
