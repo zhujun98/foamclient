@@ -14,8 +14,8 @@ from .deserializer import DeserializerType, create_deserializer
 
 class ZmqClient:
     """Provide API for receiving data from the data switch."""
-    def __init__(self, endpoint: str,
-                 deserializer: Union[DeserializerType, Callable], *,
+    def __init__(self, endpoint: str, *,
+                 deserializer: Optional[Union[DeserializerType, Callable]] = None,
                  timeout: Optional[float] = None,
                  sock: str = "PULL",
                  context: Optional[zmq.Context] = None,
@@ -54,7 +54,9 @@ class ZmqClient:
         if timeout is not None:
             self._socket.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
 
-        if callable(deserializer):
+        if deserializer is None:
+            self._unpack = lambda x: x
+        elif callable(deserializer):
             self._unpack = deserializer
         else:
             self._unpack = create_deserializer(deserializer)

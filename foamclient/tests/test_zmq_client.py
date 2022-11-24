@@ -59,8 +59,12 @@ class ZmqServer:
             except Empty:
                 continue
 
-    def feed(self):
-        self._buffer.put(pickle.dumps(f"data{self._counter}"))
+    def feed(self, *, serializer=pickle.dumps):
+        if serializer is None:
+            data = f"data{self._counter}".encode('utf-8')
+        else:
+            data = pickle.dumps(f"data{self._counter}")
+        self._buffer.put(data)
         self._counter += 1
 
     def __enter__(self):
@@ -76,9 +80,9 @@ class ZmqServer:
 def test_zmq_client_push_pull():
     with ZmqServer("PUSH") as server:
         with ZmqClient(f"tcp://localhost:{_PORT}",
+                       deserializer=pickle.loads,
                        sock="PULL",
-                       timeout=1.0,
-                       deserializer=pickle.loads) as client:
+                       timeout=1.0) as client:
             for i in range(3):
                 server.feed()
                 assert client.next() == f"data{i}"
@@ -87,9 +91,9 @@ def test_zmq_client_push_pull():
 def test_zmq_client_rep_req():
     with ZmqServer("REP") as server:
         with ZmqClient(f"tcp://localhost:{_PORT}",
+                       deserializer=pickle.loads,
                        sock="REQ",
-                       timeout=1.0,
-                       deserializer=pickle.loads) as client:
+                       timeout=1.0) as client:
             for i in range(3):
                 server.feed()
                 assert client.next() == f"data{i}"
@@ -98,9 +102,9 @@ def test_zmq_client_rep_req():
 def test_zmq_client_pub_sub():
     with ZmqServer("PUB") as server:
         with ZmqClient(f"tcp://localhost:{_PORT}",
+                       deserializer=pickle.loads,
                        sock="SUB",
-                       timeout=1.0,
-                       deserializer=pickle.loads) as client:
+                       timeout=1.0) as client:
             # It takes a little time (a few milliseconds) for the connection to be set up,
             # and in that time lots of messages can be lost. The publisher needs to sleep
             # a little before starting to publish.
@@ -108,3 +112,22 @@ def test_zmq_client_pub_sub():
             for i in range(3):
                 server.feed()
                 assert client.next() == f"data{i}"
+
+
+def test_zmq_client_none_deserializer():
+    with ZmqServer("PUSH") as server:
+        with ZmqClient(f"tcp://localhost:{_PORT}",
+                       sock="PULL",
+                       timeout=1.0) as client:
+            server.feed(serializer=None)
+            assert bytes(client.next()) == b"data0"
+
+
+def test_zmq_client_predefined_deserializer():
+    with ZmqServer("PUSH") as server:
+        with ZmqClient(f"tcp://localhost:{_PORT}",
+                       deserializer=DeserializerType.SLS,
+                       sock="PULL",
+                       timeout=1.0) as client:
+            server.feed()
+            assert client.next() == "data0"
