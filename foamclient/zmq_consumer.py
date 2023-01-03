@@ -12,8 +12,8 @@ import zmq
 from .deserializer import DeserializerType, create_deserializer
 
 
-class ZmqClient:
-    """Provide API for receiving data from the data switch."""
+class ZmqConsumer:
+    """Provide API for consuming zmq data stream."""
     def __init__(self, endpoint: str, *,
                  deserializer: Optional[Union[DeserializerType, Callable]] = None,
                  timeout: Optional[float] = None,

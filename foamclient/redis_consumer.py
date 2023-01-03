@@ -12,8 +12,8 @@ import redis
 from .deserializer import DeserializerType, create_deserializer
 
 
-class RedisClient:
-    """Provide API for receiving data from the data switch."""
+class RedisConsumer:
+    """Provide API for consuming data stored in Redis."""
 
     def __init__(self, host: str, port: int,
                  deserializer: Union[DeserializerType, Callable], *,
@@ -22,42 +22,48 @@ class RedisClient:
 
         :param host: hostname of the Redis server.
         :param port: port of the Redis server.
-        :param deserializer: deserializer type.
+        :param deserializer: deserializer or deserializer type.
         :param timeout: subscribe timeout in seconds.
         """
         self._client = redis.Redis(host=host, port=port, password="sls2.0")
+        self._streams = {}
 
-        self._subscriber = None
-
-        self._timeout = timeout
+        self._timeout = int(timeout * 1000)  # to milliseconds
 
         if callable(deserializer):
             self._unpack = deserializer
         else:
             self._unpack = create_deserializer(deserializer)
 
-    def subscribe(self, channel: str) -> None:
-        """Subscribe to the given channel.
+    def subscribe(self, stream: str) -> None:
+        """Subscribe to a given stream.
 
-        :param channel: Redis pub channel to subscribe.
+        :param stream: stream name.
         """
-        self._subscriber = self._client.pubsub()
-        self._subscriber.subscribe(channel)
+        self._streams[stream] = '$'
 
-    def next(self) -> Any:
-        msg = self._subscriber.get_message(
-            ignore_subscribe_messages=True, timeout=self._timeout)
-        if msg is None:
+    def consume(self, count: int = 1) -> [dict]:
+        """Consume a list of data items.
+
+        :param count: the maximum number of data items too return.
+        """
+        data = self._client.xread(self._streams, count, block=self._timeout)
+        if not data:
             raise TimeoutError
-        key = int(msg['data'])
-        data = self._client.hgetall(key)
-        return {key.decode(): self._unpack(value)
-                for key, value in data.items()}
+
+        schema = {
+            "samples": None,
+            "encoder": None,
+            "index": None
+        }
+        ret = []
+        for _, item in data[0][1]:
+            ret.append({key: self._unpack(item[key.encode()])
+                        for key in schema})
+        return ret
 
     def __enter__(self):
         return self
 
     def __exit__(self, *exc):
-        if self._subscriber is not None:
-            self._subscriber.close()
         self._client.close()
