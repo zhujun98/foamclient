@@ -9,6 +9,7 @@ from typing import Any, Callable, Optional, Union
 
 import redis
 
+from .schema_registry import CachedSchemaRegistry
 from .serializer import SerializerType, create_serializer
 
 
@@ -31,9 +32,7 @@ class RedisProducer:
         """
         self._client = redis.Redis(host=host, port=port, password=password)
 
-        self._subscriber = None
-
-        self._timeout = timeout
+        self._timeout = timeout  # FIXME: not used for now
         self._maxlen = maxlen
 
         if callable(serializer):
@@ -41,22 +40,34 @@ class RedisProducer:
         else:
             self._pack = create_serializer(serializer)
 
-    def _encode_with_schema(self, data, schema):
-        # TODO: register schema
-        return {key: self._pack(data[key]) for key in schema}
+        self._schema_registry = CachedSchemaRegistry(self._client)
 
-    def produce(self, stream: str, item: Any, *, schema) -> str:
+    def _encode_with_schema(self, item, schema):
+        return {field["name"]: self._pack(item[field["name"]])
+                for field in schema["fields"]}
+
+    def produce(self, stream: str, item: Any) -> str:
         """Produce data item to stream.
 
         :param stream: stream to produce data item to.
         :param item: data item.
-        :param schema: schema of the data item.
+
+        :raises: RuntimeError
         """
+        schema = self._schema_registry.get(stream)
+        if schema is None:
+            raise RuntimeError(f"Unable to retrieve schema for '{stream}'")
+
         stream_id = self._client.xadd(
             stream, self._encode_with_schema(item, schema),
             maxlen=self._maxlen
         )
         return stream_id.decode()
+
+    def publish_schema(self, schema):
+        """Publish schema for a given stream to Redis."""
+        self._schema_registry.set(
+            f"{schema['namespace']}:{schema['name']}", schema)
 
     def __enter__(self):
         return self
