@@ -50,7 +50,7 @@ class RedisConsumer:
         """
         self._stream[stream] = '$'
 
-    def consume(self, count: int = 1) -> [dict]:
+    def consume(self, count: int = 1) -> ([dict], dict):
         """Consume a list of data items.
 
         :param count: the maximum number of data items too return.
@@ -74,7 +74,7 @@ class RedisConsumer:
                 field["name"]: self._unpack(item[field["name"].encode()])
                 for field in schema["fields"]
             })
-        return ret
+        return ret, schema
 
     def __enter__(self):
         return self
