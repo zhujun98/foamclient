@@ -47,8 +47,14 @@ class CachedSchemaRegistry:
         :param stream: name of the data stream.
         :param schema: data schema.
         """
+        if stream in self._schemas:
+            return
+
+        # TODO: add an option to check whether the schema has changed
+
         try:
             self._client.execute_command(
                 'HSET', f"{stream}:schema", "schema", pickle.dumps(schema))
+            self._schemas[stream] = schema
         except redis.exceptions.ConnectionError:
             return

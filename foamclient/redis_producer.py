@@ -46,28 +46,21 @@ class RedisProducer:
         return {field["name"]: self._pack(item[field["name"]])
                 for field in schema["fields"]}
 
-    def produce(self, stream: str, item: Any) -> str:
+    def produce(self, stream: str, item: Any, schema: dict) -> str:
         """Produce data item to stream.
 
         :param stream: stream to produce data item to.
         :param item: data item.
+        :param schema: data item schema.
 
         :raises: RuntimeError
         """
-        schema = self._schema_registry.get(stream)
-        if schema is None:
-            raise RuntimeError(f"Unable to retrieve schema for '{stream}'")
-
         stream_id = self._client.xadd(
             stream, self._encode_with_schema(item, schema),
             maxlen=self._maxlen
         )
+        self._schema_registry.set(stream, schema)
         return stream_id.decode()
-
-    def publish_schema(self, schema):
-        """Publish schema for a given stream to Redis."""
-        self._schema_registry.set(
-            f"{schema['namespace']}:{schema['name']}", schema)
 
     def __enter__(self):
         return self
