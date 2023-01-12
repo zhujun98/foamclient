@@ -5,6 +5,7 @@ The full license is in the file LICENSE, distributed with this software.
 
 Author: Jun Zhu
 """
+from abc import ABC
 from typing import Any, Callable, Optional, Union
 
 import redis
@@ -14,30 +15,54 @@ from .serializer import SerializerType, create_serializer
 from .schema_registry import CachedSchemaRegistry
 
 
-class RedisConsumer:
-    """Provide API for consuming data stored in Redis."""
-
-    def __init__(self, host: str, port: int,
-                 deserializer: Union[DeserializerType, Callable], *,
-                 password: Optional[str] = None,
+class BaseRedisClient(ABC):
+    def __init__(self, host: str, port: int, password: Optional[str] = None, *,
                  timeout: Optional[int] = None):
         """Initialization.
 
         :param host: hostname of the Redis server.
         :param port: port of the Redis server.
-        :param deserializer: deserializer or deserializer type.
         :param password: Redis password.
         :param timeout: subscribe timeout in seconds.
         """
         self._client = redis.Redis(host=host, port=port, password=password)
-        self._stream = {}
 
         if timeout is None:
             self._timeout = timeout
         else:
             self._timeout = int(timeout * 1000)  # to milliseconds
 
-        if callable(deserializer):
+    @property
+    def client(self):
+        return self._client
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self._client.close()
+
+
+RedisClient = redis.Redis  # forwarding
+
+
+class RedisConsumer(BaseRedisClient):
+    """Provide API for consuming data stored in Redis."""
+
+    def __init__(self,
+                 *args,
+                 deserializer: Union[DeserializerType, Callable] = None,
+                 **kwargs):
+        """Initialization.
+
+        :param deserializer: deserializer or deserializer type.
+        """
+        super().__init__(*args, **kwargs)
+        self._stream = {}
+
+        if deserializer is None:
+            self._unpack = lambda x: x
+        elif callable(deserializer):
             self._unpack = deserializer
         else:
             self._unpack = create_deserializer(deserializer)
@@ -77,36 +102,27 @@ class RedisConsumer:
             })
         return ret, schema
 
-    def __enter__(self):
-        return self
 
-    def __exit__(self, *exc):
-        self._client.close()
-
-
-class RedisProducer:
+class RedisProducer(BaseRedisClient):
     """Provide API for writing data into Redis."""
 
-    def __init__(self, host: str, port: int,
-                 serializer: Union[SerializerType, Callable], *,
-                 password: Optional[str] = None,
-                 timeout: Optional[int] = None,
-                 maxlen: int = 10):
+    def __init__(self,
+                 *args,
+                 serializer: Union[SerializerType, Callable] = None,
+                 maxlen: int = 10,
+                 **kwargs):
         """Initialization.
 
-        :param host: hostname of the Redis server.
-        :param port: port of the Redis server.
         :param serializer: serializer or serializer type.
-        :param password: Redis password.
-        :param timeout: subscribe timeout in seconds.
         :param maxlen: maximum size of the Redis stream.
         """
-        self._client = redis.Redis(host=host, port=port, password=password)
+        super().__init__(*args, **kwargs)
 
-        self._timeout = timeout  # FIXME: not used for now
         self._maxlen = maxlen
 
-        if callable(serializer):
+        if serializer is None:
+            self._unpack = lambda x: x
+        elif callable(serializer):
             self._pack = serializer
         else:
             self._pack = create_serializer(serializer)
@@ -132,9 +148,3 @@ class RedisProducer:
         )
         self._schema_registry.set(stream, schema)
         return stream_id.decode()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        self._client.close()
