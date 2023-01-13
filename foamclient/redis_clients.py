@@ -155,3 +155,13 @@ class RedisClient:
         if self._db is None:
             self._db = redis.Redis(**instance.config)
         return self._db
+
+
+class RedisSubscriber:
+    def __init__(self):
+        self._sub = None
+
+    def __get__(self, instance, instance_type):
+        if self._sub is None:
+            self._sub = redis.Redis(**instance.config).pubsub()
+        return self._sub
