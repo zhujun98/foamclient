@@ -9,13 +9,14 @@ from typing import Any, Callable, Optional, Union
 
 import zmq
 
-from .deserializer import DeserializerType, create_deserializer
+from .serializer import SerializerType, create_deserializer
 
 
 class ZmqConsumer:
     """Provide API for consuming zmq data stream."""
     def __init__(self, endpoint: str, *,
-                 deserializer: Optional[Union[DeserializerType, Callable]] = None,
+                 deserializer: Union[SerializerType, Callable] = SerializerType.AVRO,
+                 schema: Optional[object] = None,
                  timeout: Optional[float] = None,
                  sock: str = "PULL",
                  context: Optional[zmq.Context] = None,
@@ -23,7 +24,9 @@ class ZmqConsumer:
         """Initialization.
 
         :param endpoint: endpoint of the ZMQ connection.
-        :param deserializer: deserializer type.
+        :param deserializer: deserializer type or a callable object which
+            deserializes the data.
+        :param schema: optional data (Reader's) schema for the serializer.
         :param timeout: socket timeout in seconds.
         :param sock: socket type.
         :param context: ZMQ context.
@@ -54,25 +57,30 @@ class ZmqConsumer:
         if timeout is not None:
             self._socket.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
 
-        if deserializer is None:
-            self._unpack = lambda x: x
-        elif callable(deserializer):
+        if callable(deserializer):
             self._unpack = deserializer
         else:
-            self._unpack = create_deserializer(deserializer)
+            self._unpack = create_deserializer(deserializer, schema)
 
-    def next(self) -> Any:
+    def next(self, schema: Optional[object] = None) -> Any:
+        """Return the next data item.
+
+        :param schema: optional data schema for the serializer. If given,
+            it overrides the default schema of the consumer.
+        """
         if self._sock_type == zmq.REQ and not self._req_ready:
             self._socket.send(self._request)
             self._req_ready = True
 
         try:
-            msg = self._socket.recv_multipart(copy=False)
+            msg = self._socket.recv(copy=False)
         except zmq.ZMQError:
             raise TimeoutError
         self._req_ready = False
 
-        return self._unpack(msg[0])
+        if schema is not None:
+            return self._unpack(msg, schema=schema)
+        return self._unpack(msg)
 
     def __enter__(self):
         return self
