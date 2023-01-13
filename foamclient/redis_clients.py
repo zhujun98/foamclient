@@ -25,7 +25,7 @@ class BaseRedisClient(ABC):
         :param password: Redis password.
         :param timeout: subscribe timeout in seconds.
         """
-        self._client = redis.Redis(host=host, port=port, password=password)
+        self._db = redis.Redis(host=host, port=port, password=password)
 
         if timeout is None:
             self._timeout = timeout
@@ -34,16 +34,13 @@ class BaseRedisClient(ABC):
 
     @property
     def client(self):
-        return self._client
+        return self._db
 
     def __enter__(self):
         return self
 
     def __exit__(self, *exc):
-        self._client.close()
-
-
-RedisClient = redis.Redis  # forwarding
+        self._db.close()
 
 
 class RedisConsumer(BaseRedisClient):
@@ -67,7 +64,7 @@ class RedisConsumer(BaseRedisClient):
         else:
             self._unpack = create_deserializer(deserializer)
 
-        self._schema_registry = CachedSchemaRegistry(self._client)
+        self._schema_registry = CachedSchemaRegistry(self._db)
 
     def subscribe(self, stream: str) -> None:
         """Subscribe to a given stream.
@@ -84,7 +81,7 @@ class RedisConsumer(BaseRedisClient):
         :raises: TimeoutError, RuntimeError
         """
         # the returned data is a list with at most 'count' items
-        data = self._client.xread(
+        data = self._db.xread(
             self._stream, count, block=self._timeout)
         if not data:
             raise TimeoutError
@@ -127,7 +124,7 @@ class RedisProducer(BaseRedisClient):
         else:
             self._pack = create_serializer(serializer)
 
-        self._schema_registry = CachedSchemaRegistry(self._client)
+        self._schema_registry = CachedSchemaRegistry(self._db)
 
     def _encode_with_schema(self, item, schema):
         return {field["name"]: self._pack(item[field["name"]])
@@ -142,9 +139,19 @@ class RedisProducer(BaseRedisClient):
 
         :raises: RuntimeError
         """
-        stream_id = self._client.xadd(
+        stream_id = self._db.xadd(
             stream, self._encode_with_schema(item, schema),
             maxlen=self._maxlen
         )
         self._schema_registry.set(stream, schema)
         return stream_id.decode()
+
+
+class RedisClient:
+    def __init__(self):
+        self._db = None
+
+    def __get__(self, instance, instance_type):
+        if self._db is None:
+            self._db = redis.Redis(**instance.config)
+        return self._db

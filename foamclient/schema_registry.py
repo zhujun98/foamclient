@@ -19,7 +19,7 @@ class CachedSchemaRegistry:
 
         :param client: Redis client.
         """
-        self._client = client
+        self._db = client
 
         self._schemas = {}
 
@@ -32,7 +32,7 @@ class CachedSchemaRegistry:
             return self._schemas[stream]
 
         try:
-            schema = self._client.execute_command(
+            schema = self._db.execute_command(
                 'HGET', f"{stream}:schema", "schema")
             if schema is not None:
                 schema = pickle.loads(schema)
@@ -53,7 +53,7 @@ class CachedSchemaRegistry:
         # TODO: add an option to check whether the schema has changed
 
         try:
-            self._client.execute_command(
+            self._db.execute_command(
                 'HSET', f"{stream}:schema", "schema", pickle.dumps(schema))
             self._schemas[stream] = schema
         except redis.exceptions.ConnectionError:
