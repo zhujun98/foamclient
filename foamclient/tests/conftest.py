@@ -30,20 +30,34 @@ class AvroDataGenerator(AbstractDataGenerator):
         "name": "test_data",
         "fields": [
             {
-                "name": "index",
+                "name": "integer",
                 "type": "long"
             },
             {
-                "name": "name",
+                "name": "string",
                 "type": "string"
+            },
+            {
+                "name": "array1d",
+                "type": {
+                    "type": "record",
+                    "logicalType": "ndarray",
+                    "name": "Array1D",
+                    "fields": [
+                        {"name": "shape", "type": {"items": "int", "type": "array"}},
+                        {"name": "dtype", "type": "string"},
+                        {"name": "data", "type": "bytes"}
+                    ]
+                }
             },
         ]
     }))
 
     def next(self):
         data = {
-            "index": self._counter,  # integer
-            "name": f"data{self._counter}",  # string
+            "integer": self._counter,
+            "string": f"data{self._counter}",
+            "array1d": np.ones(10, dtype=np.int32) * self._counter,
         }
         self._counter += 1
         return data
@@ -52,8 +66,21 @@ class AvroDataGenerator(AbstractDataGenerator):
 class PickleDataGenerator(AbstractDataGenerator):
     def next(self):
         data = {
-            "index": self._counter,
-            "name": f"data{self._counter}"
+            "integer": self._counter,
+            "string": f"data{self._counter}"
         }
         self._counter += 1
         return data
+
+
+def assert_result_equal(left, right):
+    if isinstance(left, dict):
+        for k, v in left.items():
+            assert k in right
+            assert isinstance(right[k], type(v))
+            if isinstance(v, np.ndarray):
+                np.testing.assert_array_equal(v, right[k])
+            else:
+                assert v == right[k]
+    else:
+        assert left == right

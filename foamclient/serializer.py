@@ -13,6 +13,7 @@ from typing import Optional
 
 import avro.schema
 from avro.io import BinaryDecoder, BinaryEncoder, DatumReader, DatumWriter
+import numpy as np
 
 
 class SerializerType(Enum):
@@ -21,9 +22,6 @@ class SerializerType(Enum):
 
 
 class AbstractSerializer(abc.ABC):
-    def __init__(self, schema: object = None):
-        self._schema = schema
-
     @abc.abstractmethod
     def __call__(self, datum: object,
                  schema: Optional[object] = None,
@@ -33,10 +31,23 @@ class AbstractSerializer(abc.ABC):
 
 class Serializer(AbstractSerializer):
     def __init__(self, schema: Optional[avro.schema.Schema] = None):
-        super().__init__(schema)
+        super().__init__()
         self._writer = DatumWriter(schema)
 
-    def __call__(self, datum: object,
+    def _preprocess(self, datum):
+        ret = {}
+        for k, v in datum.items():
+            if isinstance(v, np.ndarray):
+                ret[k] = {
+                    "shape": list(v.shape),
+                    "dtype": v.dtype.str,
+                    "data": v.tobytes()
+                }
+            else:
+                ret[k] = v
+        return ret
+
+    def __call__(self, datum: dict,
                  schema: Optional[avro.schema.Schema] = None,
                  **kwargs) -> bytes:
         """Override."""
@@ -44,7 +55,8 @@ class Serializer(AbstractSerializer):
         encoder = BinaryEncoder(bytes_writer)
         if schema is not None:
             self._writer.writers_schema = schema
-        self._writer.write(datum, encoder)
+
+        self._writer.write(self._preprocess(datum), encoder)
         return bytes_writer.getvalue()
 
 
@@ -55,9 +67,6 @@ class PySerializer(AbstractSerializer):
 
 
 class AbstractDeserializer(abc.ABC):
-    def __init__(self, schema: object = None):
-        self._schema = schema
-
     @abc.abstractmethod
     def __call__(self, buf: bytes,
                  schema: Optional[object] = None,
@@ -67,8 +76,19 @@ class AbstractDeserializer(abc.ABC):
 
 class Deserializer(AbstractSerializer):
     def __init__(self, schema: Optional[avro.schema.Schema] = None):
-        super().__init__(schema)
+        super().__init__()
         self._reader = DatumReader(writers_schema=schema)
+
+    def _postprocess(self, datum, schema):
+        for field in schema.fields:
+            name = field.name
+            item = datum[name]
+            props = field.type.props
+            if props.get('logicalType', None) == 'ndarray':
+                datum[name] = np.frombuffer(
+                    item['data'],
+                    dtype=np.dtype(item['dtype'])).reshape(item['shape'])
+        return datum
 
     def __call__(self, buf: bytes,
                  schema: Optional[avro.schema.Schema] = None,
@@ -77,7 +97,8 @@ class Deserializer(AbstractSerializer):
         decoder = BinaryDecoder(io.BytesIO(buf))
         if schema is not None:
             self._reader.writers_schema = schema
-        return self._reader.read(decoder)
+        data = self._reader.read(decoder)
+        return self._postprocess(data, self._reader.writers_schema)
 
 
 class PyDeserializer(AbstractSerializer):

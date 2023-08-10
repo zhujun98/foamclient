@@ -6,7 +6,8 @@ from typing import Callable, Optional, Union
 
 import pytest
 from .conftest import (
-    AvroDataGenerator, PickleDataGenerator, StringDataGenerator
+    assert_result_equal, AvroDataGenerator, PickleDataGenerator,
+    StringDataGenerator
 )
 
 import avro.schema
@@ -119,7 +120,7 @@ def test_zmq_clients(serializer, deserializer, server_sock, client_sock):
                 data_gt = gen.next()
                 producer.produce(data_gt)
                 data = consumer.next()
-                assert data == data_gt
+                assert_result_equal(data_gt, data)
 
 
 def test_default_deserializer():
@@ -132,7 +133,7 @@ def test_default_deserializer():
                          timeout=1.0) as consumer:
             data_gt = gen.next()
             producer.produce(data_gt)
-            assert consumer.next(schema=gen.schema) == data_gt
+            assert_result_equal(consumer.next(schema=gen.schema), data_gt)
 
 
 def test_schema_overiding():
@@ -154,7 +155,7 @@ def test_schema_overiding():
             data_gt = gen.next()
             producer.produce(data_gt)
             # schema is overridden here
-            assert consumer.next(schema=gen.schema) == data_gt
+            assert_result_equal(consumer.next(schema=gen.schema), data_gt)
 
 
 def test_callable_deserializer():

@@ -5,7 +5,7 @@ The full license is in the file LICENSE, distributed with this software.
 
 Author: Jun Zhu <jun.zhu@psi.ch>
 """
-from typing import Any, Callable, Optional, Union
+from typing import Callable, Optional, Union
 
 import zmq
 
@@ -62,7 +62,7 @@ class ZmqConsumer:
         else:
             self._unpack = create_deserializer(deserializer, schema)
 
-    def next(self, schema: Optional[object] = None) -> Any:
+    def next(self, schema: Optional[object] = None) -> object:
         """Return the next data item.
 
         :param schema: optional data schema for the serializer. If given,
