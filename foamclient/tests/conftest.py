@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 import fastavro
 import numpy as np
 
-from foamclient import AvroSchema
+from foamclient import AvroSchemaExt
 
 
 class AbstractDataGenerator(ABC):
@@ -40,7 +40,7 @@ class AvroDataGenerator(AbstractDataGenerator):
             },
             {
                 "name": "array1d",
-                "type": AvroSchema.ndarray
+                "type": AvroSchemaExt.ndarray
             },
         ]
     })
@@ -70,7 +70,7 @@ class AvroDataGenerator(AbstractDataGenerator):
                 },
                 {
                     "name": "array1d",
-                    "type": AvroSchema.ndarray
+                    "type": AvroSchemaExt.ndarray
                 },
             ]
         })
@@ -106,7 +106,7 @@ class AvroDataGenerator(AbstractDataGenerator):
                             },
                             {
                                 "name": "array2d",
-                                "type": AvroSchema.ndarray
+                                "type": AvroSchemaExt.ndarray
                             }
                         ]
                     }

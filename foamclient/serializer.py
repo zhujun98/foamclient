@@ -15,7 +15,7 @@ import fastavro
 import numpy as np
 
 
-class AvroSchema:
+class AvroSchemaExt:
 
     ndarray = {
         "type": "record",
