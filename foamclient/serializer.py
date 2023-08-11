@@ -11,12 +11,12 @@ import io
 import pickle
 from typing import Optional
 
-import avro.schema
-from avro.io import BinaryDecoder, BinaryEncoder, DatumReader, DatumWriter
+import fastavro
 import numpy as np
 
 
 class AvroSchema:
+
     ndarray = {
         "type": "record",
         "logicalType": "ndarray",
@@ -35,6 +35,9 @@ class SerializerType(Enum):
 
 
 class AbstractSerializer(abc.ABC):
+    def __init__(self, schema: Optional[object] = None):
+        self._schema = schema
+
     @abc.abstractmethod
     def __call__(self, datum: object,
                  schema: Optional[object] = None,
@@ -42,35 +45,29 @@ class AbstractSerializer(abc.ABC):
         ...
 
 
+def encode_ndarray(arr: np.ndarray, *args):
+    return {
+        "shape": list(arr.shape),
+        "dtype": arr.dtype.str,
+        "data": arr.tobytes()
+    }
+
+
 class Serializer(AbstractSerializer):
 
-    def __init__(self, schema: Optional[avro.schema.Schema] = None):
-        super().__init__()
-        self._writer = DatumWriter(schema)
+    fastavro.write.LOGICAL_WRITERS['record-ndarray'] = encode_ndarray
 
-    def _preprocess(self, datum):
-        ret = {}
-        for k, v in datum.items():
-            if isinstance(v, np.ndarray):
-                ret[k] = {
-                    "shape": list(v.shape),
-                    "dtype": v.dtype.str,
-                    "data": v.tobytes()
-                }
-            else:
-                ret[k] = v
-        return ret
+    def __init__(self, schema: Optional[object] = None):
+        super().__init__(schema)
 
     def __call__(self, datum: dict,
-                 schema: Optional[avro.schema.Schema] = None,
+                 schema: Optional[object] = None,
                  **kwargs) -> bytes:
         """Override."""
         bytes_writer = io.BytesIO()
-        encoder = BinaryEncoder(bytes_writer)
-        if schema is not None:
-            self._writer.writers_schema = schema
-
-        self._writer.write(self._preprocess(datum), encoder)
+        if schema is None:
+            schema = self._schema
+        fastavro.schemaless_writer(bytes_writer, schema, datum)
         return bytes_writer.getvalue()
 
 
@@ -81,6 +78,9 @@ class PySerializer(AbstractSerializer):
 
 
 class AbstractDeserializer(abc.ABC):
+    def __init__(self, schema: Optional[object] = None):
+        self._schema = schema
+
     @abc.abstractmethod
     def __call__(self, buf: bytes,
                  schema: Optional[object] = None,
@@ -88,31 +88,27 @@ class AbstractDeserializer(abc.ABC):
         ...
 
 
-class Deserializer(AbstractSerializer):
-    def __init__(self, schema: Optional[avro.schema.Schema] = None):
-        super().__init__()
-        self._reader = DatumReader(writers_schema=schema)
+def decode_ndarray(item, *args):
+    return np.frombuffer(
+        item['data'],
+        dtype=np.dtype(item['dtype'])).reshape(item['shape'])
 
-    def _postprocess(self, datum, schema):
-        for field in schema.fields:
-            name = field.name
-            item = datum[name]
-            props = field.type.props
-            if props.get('logicalType', None) == 'ndarray':
-                datum[name] = np.frombuffer(
-                    item['data'],
-                    dtype=np.dtype(item['dtype'])).reshape(item['shape'])
-        return datum
+
+class Deserializer(AbstractSerializer):
+
+    fastavro.read.LOGICAL_READERS['record-ndarray'] = decode_ndarray
+
+    def __init__(self, schema: Optional[object] = None):
+        super().__init__(schema)
 
     def __call__(self, buf: bytes,
-                 schema: Optional[avro.schema.Schema] = None,
+                 schema: Optional[object] = None,
                  **kwargs) -> object:
         """Override."""
-        decoder = BinaryDecoder(io.BytesIO(buf))
-        if schema is not None:
-            self._reader.writers_schema = schema
-        data = self._reader.read(decoder)
-        return self._postprocess(data, self._reader.writers_schema)
+        bytes_reader = io.BytesIO(buf)
+        if schema is None:
+            schema = self._schema
+        return fastavro.schemaless_reader(bytes_reader, schema)
 
 
 class PyDeserializer(AbstractSerializer):

@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
-import json
 
-import avro.schema
+import fastavro
 import numpy as np
 
 from foamclient import AvroSchema
@@ -26,10 +25,10 @@ class StringDataGenerator(AbstractDataGenerator):
 
 
 class AvroDataGenerator(AbstractDataGenerator):
-    schema = avro.schema.parse(json.dumps({
+    schema = fastavro.parse_schema({
         "namespace": "unittest",
         "type": "record",
-        "name": "testdata",
+        "name": "Testdata",
         "fields": [
             {
                 "name": "integer",
@@ -44,7 +43,7 @@ class AvroDataGenerator(AbstractDataGenerator):
                 "type": AvroSchema.ndarray
             },
         ]
-    }))
+    })
 
     def next(self):
         data = {
@@ -56,19 +55,72 @@ class AvroDataGenerator(AbstractDataGenerator):
         return data
 
     def dataset1(self):
+        schema = fastavro.parse_schema({
+            "namespace": "unittest",
+            "name": "Testdata1",
+            "type": "record",
+            "fields": [
+                {
+                    "name": "integer",
+                    "type": "long"
+                },
+                {
+                    "name": "string",
+                    "type": "string"
+                },
+                {
+                    "name": "array1d",
+                    "type": AvroSchema.ndarray
+                },
+            ]
+        })
         return {
-
-        }
+            "integer": 123,
+            "string": f"data123",
+            "array1d": np.array([1, 2, 3], dtype=np.int32)
+        }, schema
 
     def dataset2(self):
+        schema = fastavro.parse_schema({
+            "namespace": "unittest",
+            "name": "Testdata2",
+            "type": "record",
+            "fields": [
+                {
+                    "name": "boolean",
+                    "type": "boolean"
+                },
+                {
+                    "name": "float",
+                    "type": "float"
+                },
+                {
+                    "name": "record",
+                    "type": {
+                        "type": "record",
+                        "name": "NestedRecord",
+                        "fields": [
+                            {
+                                "name": "double",
+                                "type": "double"
+                            },
+                            {
+                                "name": "array2d",
+                                "type": AvroSchema.ndarray
+                            }
+                        ]
+                    }
+                },
+            ]
+        })
         return {
-
-        }
-
-    def dataset3(self):
-        return {
-
-        }
+            "boolean": True,
+            "float": 1.0,
+            "record": {
+                "double": 2.0,
+                "array2d": np.array([(1., 2.), (3., 4.)], dtype=np.float32)
+            }
+        }, schema
 
 
 class PickleDataGenerator(AbstractDataGenerator):
@@ -89,6 +141,6 @@ def assert_result_equal(left, right):
             if isinstance(v, np.ndarray):
                 np.testing.assert_array_equal(v, right[k])
             else:
-                assert v == right[k]
+                assert_result_equal(v, right[k])
     else:
         assert left == right

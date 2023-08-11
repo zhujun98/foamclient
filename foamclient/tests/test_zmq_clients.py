@@ -1,4 +1,3 @@
-import json
 from queue import Empty, Queue
 from threading import Thread
 import time
@@ -10,7 +9,7 @@ from .conftest import (
     StringDataGenerator
 )
 
-import avro.schema
+import fastavro
 import zmq
 from foamclient import create_serializer, ZmqConsumer, SerializerType
 
@@ -137,12 +136,12 @@ def test_default_deserializer():
 
 
 def test_schema_overiding():
-    false_schema = avro.schema.parse(json.dumps({
+    false_schema = fastavro.parse_schema({
         "type": "record",
         "namespace": "unittest",
         "name": "data",
         "fields": []
-    }))
+    })
     gen = AvroDataGenerator()
     with ZmqProducer("PUSH",
                      serializer=SerializerType.AVRO,
