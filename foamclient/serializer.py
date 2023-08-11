@@ -16,6 +16,19 @@ from avro.io import BinaryDecoder, BinaryEncoder, DatumReader, DatumWriter
 import numpy as np
 
 
+class AvroSchema:
+    ndarray = {
+        "type": "record",
+        "logicalType": "ndarray",
+        "name": "NDArray",
+        "fields": [
+            {"name": "shape", "type": {"items": "int", "type": "array"}},
+            {"name": "dtype", "type": "string"},
+            {"name": "data", "type": "bytes"}
+        ]
+    }
+
+
 class SerializerType(Enum):
     AVRO = 0
     PICKLE = 1
@@ -30,6 +43,7 @@ class AbstractSerializer(abc.ABC):
 
 
 class Serializer(AbstractSerializer):
+
     def __init__(self, schema: Optional[avro.schema.Schema] = None):
         super().__init__()
         self._writer = DatumWriter(schema)

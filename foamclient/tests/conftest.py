@@ -4,6 +4,8 @@ import json
 import avro.schema
 import numpy as np
 
+from foamclient import AvroSchema
+
 
 class AbstractDataGenerator(ABC):
 
@@ -27,7 +29,7 @@ class AvroDataGenerator(AbstractDataGenerator):
     schema = avro.schema.parse(json.dumps({
         "namespace": "unittest",
         "type": "record",
-        "name": "test_data",
+        "name": "testdata",
         "fields": [
             {
                 "name": "integer",
@@ -39,16 +41,7 @@ class AvroDataGenerator(AbstractDataGenerator):
             },
             {
                 "name": "array1d",
-                "type": {
-                    "type": "record",
-                    "logicalType": "ndarray",
-                    "name": "Array1D",
-                    "fields": [
-                        {"name": "shape", "type": {"items": "int", "type": "array"}},
-                        {"name": "dtype", "type": "string"},
-                        {"name": "data", "type": "bytes"}
-                    ]
-                }
+                "type": AvroSchema.ndarray
             },
         ]
     }))
@@ -61,6 +54,21 @@ class AvroDataGenerator(AbstractDataGenerator):
         }
         self._counter += 1
         return data
+
+    def dataset1(self):
+        return {
+
+        }
+
+    def dataset2(self):
+        return {
+
+        }
+
+    def dataset3(self):
+        return {
+
+        }
 
 
 class PickleDataGenerator(AbstractDataGenerator):
