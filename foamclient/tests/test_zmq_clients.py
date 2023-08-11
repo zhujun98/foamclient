@@ -1,19 +1,25 @@
-import pickle
 from queue import Empty, Queue
 from threading import Thread
 import time
+from typing import Callable, Optional, Union
 
 import pytest
+from .conftest import (
+    assert_result_equal, AvroDataGenerator, PickleDataGenerator,
+    StringDataGenerator
+)
 
+import fastavro
 import zmq
-from foamclient import ZmqConsumer, DeserializerType
-
+from foamclient import create_serializer, ZmqConsumer, SerializerType
 
 _PORT = 12345
 
 
 class ZmqProducer:
-    def __init__(self, sock: str):
+    def __init__(self, sock: str, *,
+                 serializer: Union[SerializerType, Callable],
+                 schema: Optional[object] = None):
         self._ctx = zmq.Context()
 
         if sock == 'PUSH':
@@ -24,6 +30,11 @@ class ZmqProducer:
             self._sock_type = zmq.PUB
         else:
             raise ValueError('Unsupported ZMQ socket type: %s' % str(sock))
+
+        if callable(serializer):
+            self._pack = serializer
+        else:
+            self._pack = create_serializer(serializer, schema)
 
         self._thread = Thread(target=self._run)
         self._buffer = Queue(maxsize=5)
@@ -61,12 +72,8 @@ class ZmqProducer:
             except Empty:
                 continue
 
-    def produce(self, *, serializer=pickle.dumps):
-        if serializer is None:
-            data = f"data{self._counter}".encode('utf-8')
-        else:
-            data = pickle.dumps(f"data{self._counter}")
-        self._buffer.put(data)
+    def produce(self, data: object):
+        self._buffer.put(self._pack(data))
         self._counter += 1
 
     def __enter__(self):
@@ -79,37 +86,82 @@ class ZmqProducer:
         self._ctx.destroy()
 
 
-@pytest.mark.parametrize("server_sock,client_sock", [("PUSH", "PULL"), ("PUB", "SUB"), ("REP", "REQ")])
-def test_zmq_consumer(server_sock, client_sock):
-    with ZmqProducer("PUSH") as producer:
+@pytest.mark.parametrize(
+    "server_sock,client_sock", [("REP", "REQ")])
+@pytest.mark.parametrize(
+    "serializer, deserializer", [(SerializerType.AVRO, SerializerType.AVRO),
+                                 (SerializerType.PICKLE, SerializerType.PICKLE),
+                                 (lambda x: x.encode(), lambda x: x.bytes.decode())])
+def test_zmq_clients(serializer, deserializer, server_sock, client_sock):
+    if serializer == SerializerType.AVRO:
+        gen = AvroDataGenerator()
+        schema = gen.schema
+    elif serializer == SerializerType.PICKLE:
+        gen = PickleDataGenerator()
+        schema = None
+    else:
+        gen = StringDataGenerator()
+        schema = None
+
+    with ZmqProducer(server_sock, serializer=serializer, schema=schema) as producer:
         with ZmqConsumer(f"tcp://localhost:{_PORT}",
-                         deserializer=pickle.loads,
-                         sock="PULL",
+                         deserializer=deserializer,
+                         schema=schema,
+                         sock=client_sock,
                          timeout=1.0) as consumer:
             # It takes a little time (a few milliseconds) for the pub-sub connection to be set up,
             # and in that time lots of messages can be lost. The publisher needs to sleep
             # a little before starting to publish.
             if server_sock == "PUB":
                 time.sleep(0.1)
-            for i in range(3):
-                producer.produce()
-                assert consumer.next() == f"data{i}"
+
+            for _ in range(3):
+                data_gt = gen.next()
+                producer.produce(data_gt)
+                data = consumer.next()
+                assert_result_equal(data_gt, data)
 
 
-def test_zmq_client_none_deserializer():
-    with ZmqProducer("PUSH") as producer:
+def test_default_deserializer():
+    gen = AvroDataGenerator()
+    with ZmqProducer("PUSH",
+                     serializer=SerializerType.AVRO,
+                     schema=gen.schema) as producer:
         with ZmqConsumer(f"tcp://localhost:{_PORT}",
                          sock="PULL",
                          timeout=1.0) as consumer:
-            producer.produce(serializer=None)
+            data_gt = gen.next()
+            producer.produce(data_gt)
+            assert_result_equal(consumer.next(schema=gen.schema), data_gt)
+
+
+def test_schema_overiding():
+    false_schema = fastavro.parse_schema({
+        "type": "record",
+        "namespace": "unittest",
+        "name": "data",
+        "fields": []
+    })
+    gen = AvroDataGenerator()
+    with ZmqProducer("PUSH",
+                     serializer=SerializerType.AVRO,
+                     schema=gen.schema) as producer:
+        with ZmqConsumer(f"tcp://localhost:{_PORT}",
+                         deserializer=SerializerType.AVRO,
+                         schema=false_schema,
+                         sock="PULL",
+                         timeout=1.0) as consumer:
+            data_gt = gen.next()
+            producer.produce(data_gt)
+            # schema is overridden here
+            assert_result_equal(consumer.next(schema=gen.schema), data_gt)
+
+
+def test_callable_deserializer():
+    with ZmqProducer("PUSH", serializer=lambda x: x.encode()) as producer:
+        with ZmqConsumer(f"tcp://localhost:{_PORT}",
+                         sock="PULL",
+                         deserializer=lambda x: x,
+                         timeout=1.0) as consumer:
+            producer.produce("data0")
             assert bytes(consumer.next()) == b"data0"
-
-
-def test_zmq_client_predefined_deserializer():
-    with ZmqProducer("PUSH") as producer:
-        with ZmqConsumer(f"tcp://localhost:{_PORT}",
-                         deserializer=DeserializerType.SLS,
-                         sock="PULL",
-                         timeout=1.0) as consumer:
-            producer.produce()
-            assert consumer.next() == "data0"

@@ -10,8 +10,7 @@ from typing import Any, Callable, Optional, Union
 
 import redis
 
-from .deserializer import DeserializerType, create_deserializer
-from .serializer import SerializerType, create_serializer
+from .serializer import SerializerType, create_serializer, create_deserializer
 from .schema_registry import CachedSchemaRegistry
 
 
@@ -48,18 +47,17 @@ class RedisConsumer(BaseRedisClient):
 
     def __init__(self,
                  *args,
-                 deserializer: Union[DeserializerType, Callable] = None,
+                 deserializer: Union[SerializerType, Callable] = SerializerType.AVRO,
                  **kwargs):
         """Initialization.
 
-        :param deserializer: deserializer or deserializer type.
+        :param deserializer: deserializer type or a callable object which
+            deserializes the data.
         """
         super().__init__(*args, **kwargs)
         self._stream = {}
 
-        if deserializer is None:
-            self._unpack = lambda x: x
-        elif callable(deserializer):
+        if callable(deserializer):
             self._unpack = deserializer
         else:
             self._unpack = create_deserializer(deserializer)
@@ -105,21 +103,20 @@ class RedisProducer(BaseRedisClient):
 
     def __init__(self,
                  *args,
-                 serializer: Union[SerializerType, Callable] = None,
+                 serializer: Union[SerializerType, Callable] = SerializerType.AVRO,
                  maxlen: int = 10,
                  **kwargs):
         """Initialization.
 
-        :param serializer: serializer or serializer type.
+        :param serializer: serializer type or a callable object which
+            serializes the data.
         :param maxlen: maximum size of the Redis stream.
         """
         super().__init__(*args, **kwargs)
 
         self._maxlen = maxlen
 
-        if serializer is None:
-            self._unpack = lambda x: x
-        elif callable(serializer):
+        if callable(serializer):
             self._pack = serializer
         else:
             self._pack = create_serializer(serializer)
