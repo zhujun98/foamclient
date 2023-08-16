@@ -6,10 +6,11 @@ The full license is in the file LICENSE, distributed with this software.
 Author: Jun Zhu <jun.zhu@psi.ch>
 """
 import abc
+from collections.abc import Iterable
 from enum import Enum
 import io
 import pickle
-from typing import Optional
+from typing import Optional, Union
 
 import fastavro
 import numpy as np
@@ -35,11 +36,12 @@ class SerializerType(Enum):
 
 
 class AbstractSerializer(abc.ABC):
-    def __init__(self, schema: Optional[object] = None):
+    def __init__(self, schema: Optional[object] = None, **kwargs):
         self._schema = schema
+        self._multipart = kwargs.get('multipart', False)
 
     @abc.abstractmethod
-    def __call__(self, datum: object,
+    def __call__(self, data: object,
                  schema: Optional[object] = None,
                  **kwargs) -> object:
         ...
@@ -53,33 +55,41 @@ def encode_ndarray(arr: np.ndarray, *args):
     }
 
 
-class Serializer(AbstractSerializer):
+class AvroSerializer(AbstractSerializer):
 
     fastavro.write.LOGICAL_WRITERS['record-ndarray'] = encode_ndarray
 
-    def __init__(self, schema: Optional[object] = None):
-        super().__init__(schema)
+    def __init__(self, schema: Optional[object] = None, **kwargs):
+        if kwargs.get('multipart', False):
+            raise ValueError("Avro deserializer does not support multipart message")
+        super().__init__(schema, **kwargs)
 
-    def __call__(self, datum: dict,
+    def __call__(self, data: dict,
                  schema: Optional[object] = None,
                  **kwargs) -> bytes:
         """Override."""
         bytes_writer = io.BytesIO()
         if schema is None:
             schema = self._schema
-        fastavro.writer(bytes_writer, schema, [datum])
+        fastavro.writer(bytes_writer, schema, [data])
         return bytes_writer.getvalue()
 
 
 class PySerializer(AbstractSerializer):
-    def __call__(self, datum: object, **kwargs) -> object:
+    def __init__(self, **kwargs):
+        super().__init__(None, **kwargs)
+
+    def __call__(self, data: Union[object, Iterable[object]], **kwargs) -> object:
         """Override."""
-        return pickle.dumps(datum)
+        if self._multipart:
+            return [pickle.dumps(item) for item in data]
+        return pickle.dumps(data)
 
 
 class AbstractDeserializer(abc.ABC):
-    def __init__(self, schema: Optional[object] = None):
+    def __init__(self, schema: Optional[object] = None, **kwargs):
         self._schema = schema
+        self._multipart = kwargs.get('multipart', False)
 
     @abc.abstractmethod
     def __call__(self, buf: bytes,
@@ -94,12 +104,14 @@ def decode_ndarray(item, *args):
         dtype=np.dtype(item['dtype'])).reshape(item['shape'])
 
 
-class Deserializer(AbstractSerializer):
+class AvroDeserializer(AbstractSerializer):
 
     fastavro.read.LOGICAL_READERS['record-ndarray'] = decode_ndarray
 
-    def __init__(self, schema: Optional[object] = None):
-        super().__init__(schema)
+    def __init__(self, schema: Optional[object] = None, **kwargs):
+        if kwargs.get('multipart', False):
+            raise ValueError("Avro deserializer does not support multipart message")
+        super().__init__(schema, **kwargs)
 
     def __call__(self, buf: bytes,
                  schema: Optional[object] = None,
@@ -112,24 +124,29 @@ class Deserializer(AbstractSerializer):
 
 
 class PyDeserializer(AbstractSerializer):
-    def __call__(self, buf: bytes, **kwargs) -> object:
+    def __init__(self, **kwargs):
+        super().__init__(None, **kwargs)
+
+    def __call__(self, buf: Union[bytes, Iterable[bytes]], **kwargs) -> object:
         """Override."""
+        if self._multipart:
+            return [pickle.loads(item) for item in buf]
         return pickle.loads(buf)
 
 
-def create_serializer(tp: SerializerType, schema: Optional[object] = None)\
+def create_serializer(tp: SerializerType, schema: Optional[object] = None, **kwargs)\
         -> AbstractSerializer:
     if tp == SerializerType.AVRO:
-        return Serializer(schema)
+        return AvroSerializer(schema, **kwargs)
     if tp == SerializerType.PICKLE:
-        return PySerializer()
+        return PySerializer(**kwargs)
     raise ValueError
 
 
-def create_deserializer(tp: SerializerType, schema: Optional[object] = None)\
+def create_deserializer(tp: SerializerType, schema: Optional[object] = None, **kwargs)\
         -> AbstractSerializer:
     if tp == SerializerType.AVRO:
-        return Deserializer(schema)
+        return AvroDeserializer(schema, **kwargs)
     if tp == SerializerType.PICKLE:
-        return PyDeserializer()
+        return PyDeserializer(**kwargs)
     raise ValueError

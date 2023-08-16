@@ -17,9 +17,10 @@ class ZmqConsumer:
     def __init__(self, endpoint: str, *,
                  deserializer: Union[SerializerType, Callable] = SerializerType.AVRO,
                  schema: Optional[object] = None,
-                 timeout: Optional[float] = None,
-                 sock: str = "PULL",
                  context: Optional[zmq.Context] = None,
+                 sock: str = "PULL",
+                 timeout: Optional[float] = None,
+                 multipart: bool = False,
                  request: bytes = b"READY"):
         """Initialization.
 
@@ -27,14 +28,16 @@ class ZmqConsumer:
         :param deserializer: deserializer type or a callable object which
             deserializes the data.
         :param schema: optional data (Reader's) schema for the serializer.
-        :param timeout: socket timeout in seconds.
-        :param sock: socket type.
         :param context: ZMQ context.
+        :param sock: socket type.
+        :param timeout: socket timeout in seconds.
+        :param multipart: whether the data will be sent as a multipart message.
         :param request: acknowledgement sent to the REP server when the socket
             type is REQ.
         """
         self._ctx = context or zmq.Context()
         self._socket = None
+        self._multipart = multipart
         self._request = request
 
         self._req_ready = False
@@ -60,7 +63,8 @@ class ZmqConsumer:
         if callable(deserializer):
             self._unpack = deserializer
         else:
-            self._unpack = create_deserializer(deserializer, schema)
+            self._unpack = create_deserializer(
+                deserializer, schema, multipart=self._multipart)
 
     def next(self, schema: Optional[object] = None) -> object:
         """Return the next data item.
@@ -73,7 +77,10 @@ class ZmqConsumer:
             self._req_ready = True
 
         try:
-            msg = self._socket.recv(copy=False)
+            if self._multipart:
+                msg = self._socket.recv_multipart(copy=False)
+            else:
+                msg = self._socket.recv(copy=False)
         except zmq.ZMQError:
             raise TimeoutError
         self._req_ready = False
