@@ -19,7 +19,8 @@ _PORT = 12345
 class ZmqProducer:
     def __init__(self, sock: str, *,
                  serializer: Union[SerializerType, Callable],
-                 schema: Optional[object] = None):
+                 schema: Optional[object] = None,
+                 multipart: bool = False):
         self._ctx = zmq.Context()
 
         if sock == 'PUSH':
@@ -31,10 +32,13 @@ class ZmqProducer:
         else:
             raise ValueError('Unsupported ZMQ socket type: %s' % str(sock))
 
+        self._multipart = multipart
+
         if callable(serializer):
             self._pack = serializer
         else:
-            self._pack = create_serializer(serializer, schema)
+            self._pack = create_serializer(
+                serializer, schema, multipart=multipart)
 
         self._thread = Thread(target=self._run)
         self._buffer = Queue(maxsize=5)
@@ -65,15 +69,23 @@ class ZmqProducer:
                     continue
 
             try:
-                data = self._buffer.get(timeout=0.1)
-                socket.send(data)
+                payload = self._pack(self._buffer.get(timeout=0.1))
+                if self._multipart:
+                    for i, item in enumerate(payload):
+                        if i == len(payload) - 1:
+                            socket.send(item)
+                        else:
+                            socket.send(item, zmq.SNDMORE)
+                else:
+                    socket.send(payload)
+
                 if self._sock_type == zmq.REP:
                     rep_ready = False
             except Empty:
                 continue
 
     def produce(self, data: object):
-        self._buffer.put(self._pack(data))
+        self._buffer.put(data)
         self._counter += 1
 
     def __enter__(self):
@@ -165,3 +177,24 @@ def test_callable_deserializer():
                          timeout=1.0) as consumer:
             producer.produce("data0")
             assert bytes(consumer.next()) == b"data0"
+
+
+def test_multipart_data():
+    with pytest.raises(ValueError, match="does not support multipart message"):
+        ZmqProducer("REP", serializer=SerializerType.AVRO, multipart=True)
+
+    data_gt = [
+        {"a": 123},
+        {"b": "Hello world"}
+    ]
+
+    with ZmqProducer("PUSH",
+                     serializer=SerializerType.PICKLE,
+                     multipart=True) as producer:
+        with ZmqConsumer(f"tcp://localhost:{_PORT}",
+                         deserializer=SerializerType.PICKLE,
+                         sock="PULL",
+                         multipart=True,
+                         timeout=1.0) as consumer:
+            producer.produce(data_gt)
+            assert consumer.next() == [{'a': 123}, {'b': 'Hello world'}]
