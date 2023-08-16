@@ -67,7 +67,7 @@ class Serializer(AbstractSerializer):
         bytes_writer = io.BytesIO()
         if schema is None:
             schema = self._schema
-        fastavro.schemaless_writer(bytes_writer, schema, datum)
+        fastavro.writer(bytes_writer, schema, [datum])
         return bytes_writer.getvalue()
 
 
@@ -108,7 +108,7 @@ class Deserializer(AbstractSerializer):
         bytes_reader = io.BytesIO(buf)
         if schema is None:
             schema = self._schema
-        return fastavro.schemaless_reader(bytes_reader, schema)
+        return next(fastavro.reader(bytes_reader, schema))
 
 
 class PyDeserializer(AbstractSerializer):
