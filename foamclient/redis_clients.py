@@ -10,7 +10,7 @@ from typing import Any, Callable, Optional, Union
 
 import redis
 
-from .serializer import SerializerType, create_serializer, create_deserializer
+from .serializer import create_serializer, create_deserializer
 from .schema_registry import CachedSchemaRegistry
 
 
@@ -47,7 +47,7 @@ class RedisConsumer(BaseRedisClient):
 
     def __init__(self,
                  *args,
-                 deserializer: Union[SerializerType, Callable] = SerializerType.AVRO,
+                 deserializer: Union[str, Callable] = "avro",
                  **kwargs):
         """Initialization.
 
@@ -103,7 +103,7 @@ class RedisProducer(BaseRedisClient):
 
     def __init__(self,
                  *args,
-                 serializer: Union[SerializerType, Callable] = SerializerType.AVRO,
+                 serializer: Union[str, Callable] = "avro",
                  maxlen: int = 10,
                  **kwargs):
         """Initialization.

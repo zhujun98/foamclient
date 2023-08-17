@@ -30,11 +30,6 @@ class AvroSchemaExt:
     }
 
 
-class SerializerType(Enum):
-    AVRO = 0
-    PICKLE = 1
-
-
 class AbstractSerializer(abc.ABC):
     def __init__(self, schema: Optional[object] = None, *,
                  multipart: bool = False):
@@ -144,19 +139,19 @@ class PickleDeserializer(AbstractSerializer):
         return pickle.loads(buf)
 
 
-def create_serializer(tp: SerializerType, *args, **kwargs)\
+def create_serializer(name: str, *args, **kwargs)\
         -> AbstractSerializer:
-    if tp == SerializerType.AVRO:
+    if name.lower() == "avro":
         return AvroSerializer(*args, **kwargs)
-    if tp == SerializerType.PICKLE:
+    if name.lower() == "pickle":
         return PickleSerializer(*args, **kwargs)
     raise ValueError
 
 
-def create_deserializer(tp: SerializerType, *args, **kwargs)\
+def create_deserializer(name: str, *args, **kwargs)\
         -> AbstractSerializer:
-    if tp == SerializerType.AVRO:
+    if name.lower() == "avro":
         return AvroDeserializer(*args, **kwargs)
-    if tp == SerializerType.PICKLE:
+    if name.lower() == "pickle":
         return PickleDeserializer(*args, **kwargs)
     raise ValueError
