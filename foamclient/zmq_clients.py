@@ -19,6 +19,7 @@ class ZmqConsumer:
                  schema: Optional[object] = None,
                  context: Optional[zmq.Context] = None,
                  sock: str = "PULL",
+                 hwm: Optional[int] = None,
                  timeout: Optional[float] = None,
                  multipart: bool = False,
                  request: bytes = b"READY"):
@@ -30,6 +31,7 @@ class ZmqConsumer:
         :param schema: optional data (Reader's) schema for the serializer.
         :param context: ZMQ context.
         :param sock: socket type.
+        :param hwm: high water mark for ZMQ socket.
         :param timeout: socket timeout in seconds.
         :param multipart: whether the data will be sent as a multipart message.
         :param request: acknowledgement sent to the REP server when the socket
@@ -54,7 +56,8 @@ class ZmqConsumer:
 
         self._sock_type = self._socket.type
         self._socket.setsockopt(zmq.LINGER, 0)
-        self._socket.set_hwm(1)
+        hwm = 1 if hwm is None else hwm
+        self._socket.set_hwm(hwm)
         self._socket.connect(endpoint)
 
         if timeout is not None:
