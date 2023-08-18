@@ -11,14 +11,14 @@ from .conftest import (
 
 import fastavro
 import zmq
-from foamclient import create_serializer, ZmqConsumer, SerializerType
+from foamclient import create_serializer, ZmqConsumer
 
 _PORT = 12345
 
 
 class ZmqProducer:
     def __init__(self, sock: str, *,
-                 serializer: Union[SerializerType, Callable],
+                 serializer: Union[str, Callable],
                  schema: Optional[object] = None,
                  multipart: bool = False):
         self._ctx = zmq.Context()
@@ -101,14 +101,14 @@ class ZmqProducer:
 @pytest.mark.parametrize(
     "server_sock,client_sock", [("REP", "REQ")])
 @pytest.mark.parametrize(
-    "serializer, deserializer", [(SerializerType.AVRO, SerializerType.AVRO),
-                                 (SerializerType.PICKLE, SerializerType.PICKLE),
+    "serializer, deserializer", [("avro", "avro"),
+                                 ("pickle", "pickle"),
                                  (lambda x: x.encode(), lambda x: x.bytes.decode())])
 def test_zmq_clients(serializer, deserializer, server_sock, client_sock):
-    if serializer == SerializerType.AVRO:
+    if serializer == "avro":
         gen = AvroDataGenerator()
         schema = gen.schema
-    elif serializer == SerializerType.PICKLE:
+    elif serializer == "pickle":
         gen = PickleDataGenerator()
         schema = None
     else:
@@ -137,7 +137,7 @@ def test_zmq_clients(serializer, deserializer, server_sock, client_sock):
 def test_default_deserializer():
     gen = AvroDataGenerator()
     with ZmqProducer("PUSH",
-                     serializer=SerializerType.AVRO,
+                     serializer="avro",
                      schema=gen.schema) as producer:
         with ZmqConsumer(f"tcp://localhost:{_PORT}",
                          sock="PULL",
@@ -156,10 +156,10 @@ def test_schema_overiding():
     })
     gen = AvroDataGenerator()
     with ZmqProducer("PUSH",
-                     serializer=SerializerType.AVRO,
+                     serializer="avro",
                      schema=gen.schema) as producer:
         with ZmqConsumer(f"tcp://localhost:{_PORT}",
-                         deserializer=SerializerType.AVRO,
+                         deserializer="avro",
                          schema=false_schema,
                          sock="PULL",
                          timeout=1.0) as consumer:
@@ -181,7 +181,7 @@ def test_callable_deserializer():
 
 def test_multipart_data():
     with pytest.raises(ValueError, match="does not support multipart message"):
-        ZmqProducer("REP", serializer=SerializerType.AVRO, multipart=True)
+        ZmqProducer("REP", serializer="avro", multipart=True)
 
     data_gt = [
         {"a": 123},
@@ -189,10 +189,10 @@ def test_multipart_data():
     ]
 
     with ZmqProducer("PUSH",
-                     serializer=SerializerType.PICKLE,
+                     serializer="pickle",
                      multipart=True) as producer:
         with ZmqConsumer(f"tcp://localhost:{_PORT}",
-                         deserializer=SerializerType.PICKLE,
+                         deserializer="pickle",
                          sock="PULL",
                          multipart=True,
                          timeout=1.0) as consumer:

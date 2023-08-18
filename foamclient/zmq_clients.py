@@ -9,13 +9,13 @@ from typing import Callable, Optional, Union
 
 import zmq
 
-from .serializer import SerializerType, create_deserializer
+from .serializer import create_deserializer
 
 
 class ZmqConsumer:
     """Provide API for consuming zmq data stream."""
     def __init__(self, endpoint: str, *,
-                 deserializer: Union[SerializerType, Callable] = SerializerType.AVRO,
+                 deserializer: Union[str, Callable] = "avro",
                  schema: Optional[object] = None,
                  context: Optional[zmq.Context] = None,
                  sock: str = "PULL",
