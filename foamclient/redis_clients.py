@@ -6,30 +6,22 @@ The full license is in the file LICENSE, distributed with this software.
 Author: Jun Zhu
 """
 from abc import ABC
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, List, Optional, Union
 
 import redis
 
 from .serializer import create_serializer, create_deserializer
-from .schema_registry import CachedSchemaRegistry
 
 
 class BaseRedisClient(ABC):
-    def __init__(self, host: str, port: int, password: Optional[str] = None, *,
-                 timeout: Optional[int] = None):
+    def __init__(self, host: str, port: int, password: Optional[str] = None):
         """Initialization.
 
         :param host: hostname of the Redis server.
         :param port: port of the Redis server.
         :param password: Redis password.
-        :param timeout: subscribe timeout in seconds.
         """
         self._db = redis.Redis(host=host, port=port, password=password)
-
-        if timeout is None:
-            self._timeout = timeout
-        else:
-            self._timeout = int(timeout * 1000)  # to milliseconds
 
     @property
     def client(self):
@@ -48,54 +40,46 @@ class RedisConsumer(BaseRedisClient):
     def __init__(self,
                  *args,
                  deserializer: Union[str, Callable] = "avro",
-                 **kwargs):
+                 schema: Optional[object] = None,
+                 block: int = 100):
         """Initialization.
 
         :param deserializer: deserializer type or a callable object which
             deserializes the data.
+        :param schema: reader's schema for the deserializer (optional).
+        :param block: BLOCK parameter in XREAD.
         """
-        super().__init__(*args, **kwargs)
-        self._stream = {}
+        super().__init__(*args)
 
         if callable(deserializer):
             self._unpack = deserializer
         else:
-            self._unpack = create_deserializer(deserializer)
+            self._unpack = create_deserializer(deserializer, schema=schema)
 
-        self._schema_registry = CachedSchemaRegistry(self._db)
+        self._block = block
 
-    def subscribe(self, stream: str) -> None:
-        """Subscribe to a given stream.
+    def consume(self, stream: str, stream_id: Optional[str] = None) -> (str, object):
+        """Consume given number of records.
 
-        :param stream: stream name.
-        """
-        self._stream[stream] = '$'
+        :param stream: the maximum number of data items too return.
+        :param stream_id: the last received ID. Only entries with an ID greater
+            than this value will be returned. If None, the latest entry will
+            be returned.
 
-    def consume(self, count: int = 1) -> ([dict], dict):
-        """Consume a list of data items.
-
-        :param count: the maximum number of data items too return.
+        :returns: a tuple of stream ID and the decoded data.
 
         :raises: TimeoutError, RuntimeError
         """
-        # the returned data is a list with at most 'count' items
-        data = self._db.xread(
-            self._stream, count, block=self._timeout)
-        if not data:
+        if stream_id is None:
+            stream_id = "$"
+        responses = self._db.xread({stream: stream_id}, 1, block=self._block)
+        if not responses:
             raise TimeoutError
 
-        schema = self._schema_registry.get(data[0][0].decode())
-        if schema is None:
-            raise RuntimeError(
-                f"Unable to retrieve schema for '{self._stream}'")
+        stream_id, record = responses[0][1][0]
+        decoded = self._unpack(record[b"data"])
 
-        ret = []
-        for _, item in data[0][1]:
-            ret.append({
-                field["name"]: self._unpack(item[field["name"].encode()])
-                for field in schema["fields"]
-            })
-        return ret, schema
+        return stream_id, decoded
 
 
 class RedisProducer(BaseRedisClient):
@@ -104,43 +88,36 @@ class RedisProducer(BaseRedisClient):
     def __init__(self,
                  *args,
                  serializer: Union[str, Callable] = "avro",
-                 maxlen: int = 10,
-                 **kwargs):
+                 schema: Optional[object] = None,
+                 maxlen: int = 10):
         """Initialization.
 
         :param serializer: serializer type or a callable object which
             serializes the data.
+        :param schema: reader's schema for the deserializer (optional).
         :param maxlen: maximum size of the Redis stream.
         """
-        super().__init__(*args, **kwargs)
-
-        self._maxlen = maxlen
+        super().__init__(*args)
 
         if callable(serializer):
             self._pack = serializer
         else:
-            self._pack = create_serializer(serializer)
+            self._pack = create_serializer(serializer, schema=schema)
 
-        self._schema_registry = CachedSchemaRegistry(self._db)
+        self._maxlen = maxlen
 
-    def _encode_with_schema(self, item, schema):
-        return {field["name"]: self._pack(item[field["name"]])
-                for field in schema["fields"]}
-
-    def produce(self, stream: str, item: Any, schema: dict) -> str:
+    def produce(self, stream: str, item: Any) -> str:
         """Produce data item to stream.
 
         :param stream: stream to produce data item to.
         :param item: data item.
-        :param schema: data item schema.
+
+        :returns: stream ID.
 
         :raises: RuntimeError
         """
-        stream_id = self._db.xadd(
-            stream, self._encode_with_schema(item, schema),
-            maxlen=self._maxlen
-        )
-        self._schema_registry.set(stream, schema)
+        encoded = self._pack(item)
+        stream_id = self._db.xadd(stream, {"data": encoded}, maxlen=self._maxlen)
         return stream_id.decode()
 
 

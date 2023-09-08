@@ -25,7 +25,7 @@ class StringDataGenerator(AbstractDataGenerator):
 
 
 class AvroDataGenerator(AbstractDataGenerator):
-    schema = fastavro.parse_schema({
+    schema = {
         "namespace": "unittest",
         "type": "record",
         "name": "Testdata",
@@ -43,7 +43,7 @@ class AvroDataGenerator(AbstractDataGenerator):
                 "type": AvroSchemaExt.ndarray
             },
         ]
-    })
+    }
 
     def next(self):
         data = {
@@ -55,7 +55,7 @@ class AvroDataGenerator(AbstractDataGenerator):
         return data
 
     def dataset1(self):
-        schema = fastavro.parse_schema({
+        schema = {
             "namespace": "unittest",
             "name": "Testdata1",
             "type": "record",
@@ -73,7 +73,7 @@ class AvroDataGenerator(AbstractDataGenerator):
                     "type": AvroSchemaExt.ndarray
                 },
             ]
-        })
+        }
         return {
             "integer": 123,
             "string": f"data123",
@@ -81,7 +81,7 @@ class AvroDataGenerator(AbstractDataGenerator):
         }, schema
 
     def dataset2(self):
-        schema = fastavro.parse_schema({
+        schema = {
             "namespace": "unittest",
             "name": "Testdata2",
             "type": "record",
@@ -112,7 +112,7 @@ class AvroDataGenerator(AbstractDataGenerator):
                     }
                 },
             ]
-        })
+        }
         return {
             "boolean": True,
             "float": 1.0,
