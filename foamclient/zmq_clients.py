@@ -5,7 +5,7 @@ The full license is in the file LICENSE, distributed with this software.
 
 Author: Jun Zhu <jun.zhu@psi.ch>
 """
-from typing import Callable, Optional, Union
+from typing import Callable, List, Optional, Union
 
 import zmq
 
@@ -28,7 +28,7 @@ class ZmqConsumer:
         :param endpoint: endpoint of the ZMQ connection.
         :param deserializer: deserializer type or a callable object which
             deserializes the data.
-        :param schema: optional data (Reader's) schema for the serializer.
+        :param schema: reader's schema for the deserializer (optional).
         :param context: ZMQ context.
         :param sock: socket type.
         :param hwm: high water mark for ZMQ socket.
@@ -67,13 +67,15 @@ class ZmqConsumer:
             self._unpack = deserializer
         else:
             self._unpack = create_deserializer(
-                deserializer, schema, multipart=self._multipart)
+                deserializer, schema=schema, multipart=self._multipart)
 
-    def next(self, schema: Optional[object] = None) -> object:
+    def next(self) -> Union[List[object], object]:
         """Return the next data item.
 
         :param schema: optional data schema for the serializer. If given,
             it overrides the default schema of the consumer.
+
+        :raise TimeoutError
         """
         if self._sock_type == zmq.REQ and not self._req_ready:
             self._socket.send(self._request)
@@ -88,8 +90,6 @@ class ZmqConsumer:
             raise TimeoutError
         self._req_ready = False
 
-        if schema is not None:
-            return self._unpack(msg, schema=schema)
         return self._unpack(msg)
 
     def __enter__(self):

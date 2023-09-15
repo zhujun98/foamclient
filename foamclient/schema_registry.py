@@ -5,9 +5,10 @@ The full license is in the file LICENSE, distributed with this software.
 
 Author: Jun Zhu
 """
-import pickle
+import json
 from typing import Optional
 
+import fastavro
 import redis
 
 
@@ -33,28 +34,33 @@ class CachedSchemaRegistry:
 
         try:
             schema = self._db.execute_command(
-                'HGET', f"{stream}:schema", "schema")
+                'HGET', f"{stream}:_schema", "0")
             if schema is not None:
-                schema = pickle.loads(schema)
-                self._schemas[stream] = schema
-                return schema
+                parsed_schema = fastavro.parse_schema(json.loads(schema))
+                self._schemas[stream] = parsed_schema
+                return parsed_schema
         except redis.exceptions.ConnectionError:
             ...
 
-    def set(self, stream: str, schema) -> None:
+    def set(self, stream: str, schema: dict) -> Optional[dict]:
         """Set schema for a given data stream.
 
         :param stream: name of the data stream.
         :param schema: data schema.
         """
         if stream in self._schemas:
-            return
+            # return the parsed schema
+            return self._schemas[stream]
 
-        # TODO: add an option to check whether the schema has changed
+        # TODO: add an option to check whether the schema has changed, e.g. check version
 
         try:
+            # save the raw schema
             self._db.execute_command(
-                'HSET', f"{stream}:schema", "schema", pickle.dumps(schema))
-            self._schemas[stream] = schema
+                'HSET', f"{stream}:_schema", "0", json.dumps(schema))
+            # cache the parsed schema
+            parsed_schema = fastavro.parse_schema(schema)
+            self._schemas[stream] = parsed_schema
+            return parsed_schema
         except redis.exceptions.ConnectionError:
-            return
+            ...

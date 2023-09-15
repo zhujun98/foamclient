@@ -4,7 +4,7 @@ import time
 from typing import Callable, Optional, Union
 
 import pytest
-from .conftest import (
+from foamclient.tests.conftest import (
     assert_result_equal, AvroDataGenerator, PickleDataGenerator,
     StringDataGenerator
 )
@@ -38,7 +38,7 @@ class ZmqProducer:
             self._pack = serializer
         else:
             self._pack = create_serializer(
-                serializer, schema, multipart=multipart)
+                serializer, schema=schema, multipart=multipart)
 
         self._thread = Thread(target=self._run)
         self._buffer = Queue(maxsize=5)
@@ -130,8 +130,9 @@ def test_zmq_clients(serializer, deserializer, server_sock, client_sock):
             for _ in range(3):
                 data_gt = gen.next()
                 producer.produce(data_gt)
-                data = consumer.next()
-                assert_result_equal(data_gt, data)
+
+                record = consumer.next()
+                assert_result_equal(record, data_gt)
 
 
 def test_default_deserializer():
@@ -141,32 +142,13 @@ def test_default_deserializer():
                      schema=gen.schema) as producer:
         with ZmqConsumer(f"tcp://localhost:{_PORT}",
                          sock="PULL",
+                         schema=gen.schema,
                          timeout=1.0) as consumer:
             data_gt = gen.next()
             producer.produce(data_gt)
-            assert_result_equal(consumer.next(schema=gen.schema), data_gt)
 
-
-def test_schema_overiding():
-    false_schema = fastavro.parse_schema({
-        "type": "record",
-        "namespace": "unittest",
-        "name": "data",
-        "fields": []
-    })
-    gen = AvroDataGenerator()
-    with ZmqProducer("PUSH",
-                     serializer="avro",
-                     schema=gen.schema) as producer:
-        with ZmqConsumer(f"tcp://localhost:{_PORT}",
-                         deserializer="avro",
-                         schema=false_schema,
-                         sock="PULL",
-                         timeout=1.0) as consumer:
-            data_gt = gen.next()
-            producer.produce(data_gt)
-            # schema is overridden here
-            assert_result_equal(consumer.next(schema=gen.schema), data_gt)
+            record = consumer.next()
+            assert_result_equal(record, data_gt)
 
 
 def test_callable_deserializer():
